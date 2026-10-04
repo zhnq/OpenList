@@ -1,6 +1,6 @@
 # Xiaomi Cloud Recordings
 
-Read-only storage for recordings already synchronized to Xiaomi Cloud. This driver runs inside OpenList; it does not require XiaomiAlbumSyncer, a companion WebDAV server, Python, OpenSSL, or a separate listener.
+Storage for recordings already synchronized to Xiaomi Cloud. This driver runs inside OpenList; it does not require XiaomiAlbumSyncer, a companion WebDAV server, Python, OpenSSL, or a separate listener.
 
 ## Configuration
 
@@ -12,7 +12,7 @@ Read-only storage for recordings already synchronized to Xiaomi Cloud. This driv
 
 `session` and `password_hash` are automatically persisted in OpenList's storage addition and omitted from the configuration form. The existing frontend retains these fields when an existing storage is edited. Changing the account clears its previous authentication state; device identity is retained.
 
-Recordings appear in one root directory. A readable filename is followed by the unique cloud ID to avoid collisions after removing Xiaomi's metadata suffix. Cloud SHA1 is exposed through `HashInfo`. Uploads, cloud deletion, renames, and directory creation are not implemented.
+Recordings appear in one root directory. A readable filename is followed by the unique cloud ID to avoid collisions after removing Xiaomi's metadata suffix. Cloud SHA1 is exposed through `HashInfo`. Cloud deletion uses the captured non-permanent deletion endpoint (`permanent=false`). Permanent deletion, uploads, renames, and directory creation are not implemented. Local NAS backups are retained. The effect on phone synchronization and the cloud recovery retention period have not been verified.
 
 ## Authentication and download behavior
 
@@ -31,7 +31,7 @@ go test ./drivers/xiaomi ./internal/op ./internal/driver
 go vet ./drivers/xiaomi
 ```
 
-Unit tests cover pagination, millisecond timestamps, encrypted password login with signed callbacks, credential-host isolation, POST ranges including full-response fallback, filename isolation, explicit SMS/trusted-device flow, account changes and read-only capability. HTTP 401 and cloud authentication errors exercise one refresh-and-retry, including a persistent failure that must stop after the second API request.
+Unit tests cover pagination, millisecond timestamps, encrypted password login with signed callbacks, credential-host isolation, POST ranges including full-response fallback, filename isolation, explicit SMS/trusted-device flow, account changes and upload restrictions. HTTP 401 and cloud authentication errors exercise one refresh-and-retry, including a persistent failure that must stop after the second API request.
 
 `go test ./...` was also attempted on Windows with Go 1.27.1. It failed in 15 existing packages. The same command against a pristine archive of the identical upstream commit failed in the identical 15 packages, including pre-existing vet format-string errors, unavailable aria2 services, transport assumptions and Windows temporary-file cleanup. The changed driver's targeted tests passed. The full suite is not claimed to pass; upstream CI and these baseline failures must be considered before public submission.
 
@@ -50,3 +50,5 @@ The driver-owned SMS flow has been validated with protocol fixtures, not against
 Protocol behavior was independently implemented from successful browser captures and live requests. XiaomiAlbumSyncer was consulted for the overall token-refresh approach. This driver does not import or invoke that project. The API is private and can change.
 
 This contribution was developed with Codex assistance and is subject to OpenList's contribution and AI-disclosure policies. Public submission should follow local user testing and meaningful human review. No real HARs, tokens or recording metadata belong in an upstream contribution.
+
+Deletion refreshes authentication before submitting one POST with the current service token. A network error or cloud error does not automatically replay the mutation, since it may already have been applied. Fixture tests cover success, API errors, lost responses, and invalid targets. No real recording was deleted by automated driver tests. Live driver deletion remains unverified until a user chooses a disposable recording.

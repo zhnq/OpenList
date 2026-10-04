@@ -19,7 +19,7 @@ type Addition struct {
 var config = driver.Config{
 	Name: "Xiaomi Cloud Recordings", LocalSort: true, NoUpload: true,
 	OnlyProxy: true, NoLinkURL: true, CheckStatus: true, DefaultRoot: "0",
-	Alert: "info|Read-only recordings already synced to Xiaomi Cloud. Device trust and tokens are saved automatically. If phone verification is requested, enable Send SMS and save, then enter the code and save again.",
+	Alert: "info|Recordings already synced to Xiaomi Cloud. Delete performs non-permanent cloud deletion; local backups are retained. Device trust and tokens are saved automatically. If phone verification is requested, enable Send SMS and save, then enter the code and save again.",
 }
 
 func init() {

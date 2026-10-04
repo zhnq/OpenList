@@ -308,14 +308,58 @@ func TestChangingAccountCannotReusePasswordHash(t *testing.T) {
 	}
 }
 
-func TestReadOnlyDriver(t *testing.T) {
+func TestNoUploadDriver(t *testing.T) {
 	d := &Xiaomi{}
 	if !d.Config().OnlyProxy || !d.Config().NoUpload {
 		t.Fatal("read-only proxy configuration missing")
 	}
-	if _, ok := any(d).(interface {
-		Remove(context.Context, model.Obj) error
-	}); ok {
-		t.Fatal("recording deletion must not be implemented")
+}
+
+func TestNonPermanentDelete(t *testing.T) {
+	for _, mode := range []string{"success", "api-error", "network-error"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			c := testClient(t, func(r *http.Request) (*http.Response, error) {
+				if out := loginResponse(r); out != nil {
+					return out, nil
+				}
+				calls++
+				if r.Method != "POST" || r.URL.Path != "/sfs/ns/recorder/file/123/delete" {
+					t.Fatal("unexpected deletion request")
+				}
+				if err := r.ParseForm(); err != nil {
+					t.Fatal(err)
+				}
+				if r.PostForm.Get("permanent") != "false" || r.PostForm.Get("serviceToken") != "test-service" || len(r.PostForm) != 2 {
+					t.Fatal("wrong delete form")
+				}
+				if mode == "network-error" {
+					return nil, fmt.Errorf("connection lost")
+				}
+				if mode == "api-error" {
+					return response(200, `{"code":401,"description":"private details"}`, nil), nil
+				}
+				return response(200, `{"code":0,"data":{}}`, nil), nil
+			})
+			d := &Xiaomi{client: c}
+			for _, obj := range []model.Obj{nil, &model.Object{ID: "0", IsFolder: true}, &model.Object{ID: "../123"}, &model.Object{ID: ""}} {
+				if d.Remove(context.Background(), obj) == nil {
+					t.Fatal("invalid delete target accepted")
+				}
+			}
+			if calls != 0 {
+				t.Fatal("invalid target contacted cloud")
+			}
+			err := d.Remove(context.Background(), &model.Object{ID: "123"})
+			if (err == nil) != (mode == "success") {
+				t.Fatalf("unexpected delete result: %v", err)
+			}
+			if err != nil && strings.Contains(err.Error(), "private details") {
+				t.Fatal("cloud response leaked")
+			}
+			if calls != 1 {
+				t.Fatal("mutation retried unexpectedly")
+			}
+		})
 	}
 }

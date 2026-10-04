@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -98,6 +99,7 @@ type recording struct {
 
 var extension = regexp.MustCompile(`(?i)\.(mp3|aac|m4a|amr|wav)(?:_|$)`)
 var unsafeName = regexp.MustCompile(`[\\/:*?"<>|\x00-\x1f]`)
+var recordingID = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 func recordingName(raw, id string) string {
 	match := extension.FindStringSubmatchIndex(raw)
@@ -240,6 +242,41 @@ func (c *cloudClient) openRange(ctx context.Context, id string, size int64, r ht
 	return &limitedBody{Reader: io.LimitReader(resp.Body, r.Length), body: resp.Body}, nil
 }
 
+// Remove matches the browser's non-permanent cloud deletion. It does not
+// modify local archives, and mutations are never automatically retried.
+func (d *Xiaomi) Remove(ctx context.Context, obj model.Obj) error {
+	if obj == nil || obj.IsDir() || !recordingID.MatchString(obj.GetID()) {
+		return errs.NotSupport
+	}
+	c := d.client
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.refresh(ctx, false); err != nil {
+		return err
+	}
+	u, _ := url.Parse(c.cloudBase)
+	token := ""
+	for _, cookie := range c.http.Jar.Cookies(u) {
+		if cookie.Name == "serviceToken" {
+			token = cookie.Value
+			break
+		}
+	}
+	if token == "" {
+		return errors.New("Xiaomi service token missing")
+	}
+	var result apiResponse
+	if err := c.json(ctx, c.cloudBase+"/sfs/ns/recorder/file/"+obj.GetID()+"/delete", url.Values{
+		"permanent": {"false"}, "serviceToken": {token},
+	}, &result); err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("Xiaomi recording delete code %d", result.Code)
+	}
+	return nil
+}
+
 type limitedBody struct {
 	io.Reader
 	body io.ReadCloser
@@ -249,3 +286,4 @@ func (b *limitedBody) Close() error { return b.body.Close() }
 
 var _ driver.Driver = (*Xiaomi)(nil)
 var _ driver.GetRooter = (*Xiaomi)(nil)
+var _ driver.Remove = (*Xiaomi)(nil)
